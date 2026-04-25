@@ -1,5 +1,6 @@
 """Main entry point for UniFi MCP Server."""
 
+import importlib.metadata
 import json
 import os
 from typing import Any
@@ -186,7 +187,7 @@ async def health_check() -> dict[str, str]:
     """
     return {
         "status": "healthy",
-        "version": "0.2.4",
+        "version": importlib.metadata.version("unifi-mcp-server"),
         "api_type": settings.api_type.value,
     }
 
