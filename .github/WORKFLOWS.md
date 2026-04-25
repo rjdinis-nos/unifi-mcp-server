@@ -23,7 +23,7 @@ Dependencies are installed with `uv sync --all-extras --all-groups` via `astral-
 
 **Triggers:** push of a `v*` tag, manual dispatch (with `version` input)
 
-Builds and pushes the Docker image to the registry, creates a GitHub Release with changelog.
+Builds and pushes the Docker image to **GitHub Container Registry** (`ghcr.io/rjdinis-nos/unifi-mcp-server:<version>`), creates a GitHub Release with changelog, and posts a release announcement as a GitHub Discussion.
 
 ---
 
