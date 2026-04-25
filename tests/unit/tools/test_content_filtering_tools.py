@@ -273,9 +273,7 @@ async def test_delete_content_filter_requires_confirm(local_settings):
 
 @pytest.mark.asyncio
 async def test_delete_content_filter_dry_run(local_settings):
-    result = await cf.delete_content_filter(
-        "cf-1", "default", local_settings, dry_run=True
-    )
+    result = await cf.delete_content_filter("cf-1", "default", local_settings, dry_run=True)
 
     assert result["status"] == "dry_run"
     assert result["filter_id"] == "cf-1"
@@ -287,9 +285,7 @@ async def test_delete_content_filter_success(local_settings):
     client = _make_client()
 
     with patch.object(cf, "UniFiClient", return_value=client):
-        result = await cf.delete_content_filter(
-            "cf-1", "default", local_settings, confirm=True
-        )
+        result = await cf.delete_content_filter("cf-1", "default", local_settings, confirm=True)
 
     assert result["status"] == "success"
     assert result["filter_id"] == "cf-1"

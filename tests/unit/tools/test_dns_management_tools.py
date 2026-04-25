@@ -100,9 +100,7 @@ async def test_list_wan_dns_empty_when_no_wans(local_settings):
 
 @pytest.mark.asyncio
 async def test_list_wan_dns_dict_response(local_settings):
-    response = {
-        "data": [{"_id": "wan-1", "name": "WAN", "purpose": "wan", "wan_dns2": "8.8.4.4"}]
-    }
+    response = {"data": [{"_id": "wan-1", "name": "WAN", "purpose": "wan", "wan_dns2": "8.8.4.4"}]}
     client = _make_client(get_return=response)
 
     with patch.object(dns, "UniFiClient", return_value=client):
@@ -171,9 +169,7 @@ async def test_update_wan_dns_auto_sets_manual_preference(local_settings):
     client = _make_client(put_return=[{"_id": "wan-1"}])
 
     with patch.object(dns, "UniFiClient", return_value=client):
-        await dns.update_wan_dns(
-            "wan-1", "default", local_settings, dns1="8.8.8.8", confirm=True
-        )
+        await dns.update_wan_dns("wan-1", "default", local_settings, dns1="8.8.8.8", confirm=True)
 
     call_kwargs = client.put.call_args[1]["json_data"]
     assert call_kwargs["wan_dns_preference"] == "manual"
@@ -186,9 +182,7 @@ async def test_update_wan_dns_auto_sets_manual_preference(local_settings):
 
 @pytest.mark.asyncio
 async def test_get_dns_filter_settings_success(local_settings):
-    response = [
-        {"_id": "ips-1", "dns_filtering": True, "dns_filters": [{"network_id": "net-1"}]}
-    ]
+    response = [{"_id": "ips-1", "dns_filtering": True, "dns_filters": [{"network_id": "net-1"}]}]
     client = _make_client(get_return=response)
 
     with patch.object(dns, "UniFiClient", return_value=client):
