@@ -37,6 +37,7 @@ pre-commit run --all-files
 Tools are plain `async` functions with `settings: Settings` as their last parameter. `register_module_tools()` in `tool_registry.py` auto-discovers public async functions in a module, binds `settings` via `functools.partial`, strips it from the MCP schema, and registers each as an `@mcp.tool()`. This means adding a new tool is just writing a new `async def` in the right module — no explicit registration needed.
 
 `src/main.py` splits tool loading based on `settings.api_type`:
+
 - **Cloud API** (cloud-v1, cloud-ea): loads only `sites` and `site_manager` tool modules
 - **Local API**: loads all ~35 tool modules
 
@@ -57,6 +58,7 @@ All Pydantic models use `extra="allow"` for forward API compatibility and `popul
 ### Tools (`src/tools/`)
 
 Standard tool function structure:
+
 1. Validate inputs using helpers from `src/utils/validators.py` (e.g., `validate_site_id`, `validate_mac_address`)
 2. Create client, authenticate, call API
 3. Parse response into Pydantic models
