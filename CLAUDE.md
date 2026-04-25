@@ -1,138 +1,106 @@
-# UniFi MCP Server - Claude Instructions
+# CLAUDE.md
 
-This file provides project-specific instructions for AI coding assistants working on the UniFi MCP Server.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Commands
 
-The UniFi MCP Server is a Model Context Protocol (MCP) server that exposes the UniFi Network Controller API, enabling AI agents and applications to interact with UniFi network infrastructure in a standardized way.
+```bash
+# Run all unit tests
+pytest tests/unit/
 
-**Current Version**: v0.2.3
-**Python Version**: 3.10+
-**Framework**: FastMCP
+# Run a single test file
+pytest tests/unit/tools/test_backups_tools.py
 
-## Quick Start for AI Assistants
+# Run a single test by name
+pytest tests/unit/tools/test_backups_tools.py::test_trigger_backup_success
 
-### Before Starting Work
+# Run with coverage report
+pytest tests/unit/ --cov=src --cov-report=term-missing
 
-1. **Read Key Documentation**:
-   - `README.md` - Project overview and features
-   - `AGENTS.md` - Universal AI agent guidelines
-   - `DEVELOPMENT_PLAN.md` - Roadmap and priorities
-   - `TODO.md` - Current tasks and phase breakdown
-   - `API.md` - Complete MCP tool documentation
+# Format code
+black src/ tests/ && isort src/ tests/
 
-2. **Understand the Architecture**:
-   - `src/main.py` - MCP server entry point
-   - `src/api/` - UniFi API client
-   - `src/models/` - Pydantic data models
-   - `src/tools/` - MCP tool implementations
-   - `tests/unit/` - Unit tests (1,156 tests passing)
+# Lint
+ruff check src/ tests/ --fix
 
-### Development Workflow
+# Type check
+mypy src/
 
-1. **Feature Development**:
-   - Create feature branch: `git checkout -b feature/your-feature`
-   - Follow TDD: Write tests first, then implementation
-   - Maintain 80% minimum test coverage for new code
-   - Use Pydantic models for all data structures
-   - Add comprehensive docstrings (Google style)
+# Run all pre-commit checks
+pre-commit run --all-files
+```
 
-2. **Code Quality**:
-   - Run tests: `pytest tests/unit/`
-   - Format: `black src/ tests/` and `isort src/ tests/`
-   - Lint: `ruff check src/ tests/ --fix`
-   - Type check: `mypy src/`
-   - Pre-commit: `pre-commit run --all-files`
+## Architecture
 
-3. **Safety Mechanisms**:
-   - All mutating operations require `confirm=True`
-   - Implement dry-run mode for preview
-   - Add audit logging for operations
-   - Validate all user inputs
-   - Never commit secrets or credentials
+### Tool Registration (`src/tool_registry.py`)
 
-### Technology Stack
+Tools are plain `async` functions with `settings: Settings` as their last parameter. `register_module_tools()` in `tool_registry.py` auto-discovers public async functions in a module, binds `settings` via `functools.partial`, strips it from the MCP schema, and registers each as an `@mcp.tool()`. This means adding a new tool is just writing a new `async def` in the right module — no explicit registration needed.
 
-- **Language**: Python 3.10+
-- **Framework**: FastMCP (MCP server framework)
-- **API Client**: httpx (async HTTP)
-- **Data Validation**: Pydantic v2
-- **Testing**: pytest with asyncio support
-- **Caching**: Redis (optional)
-- **Monitoring**: agnost.ai (optional)
+`src/main.py` splits tool loading based on `settings.api_type`:
+- **Cloud API** (cloud-v1, cloud-ea): loads only `sites` and `site_manager` tool modules
+- **Local API**: loads all ~35 tool modules
 
-### API Modes
+### API Client (`src/api/client.py`)
 
-The server supports three UniFi API access modes:
+`UniFiClient` handles authentication, rate limiting, retries, and **endpoint translation**. All tools use Cloud EA endpoint format (e.g., `/ea/sites/{site_id}/devices`); the client transparently translates these to Local API paths (e.g., `/proxy/network/api/s/{site_name}/stat/device`) when `api_type=local`. The rate limiter uses a token bucket algorithm. Always use the client as an async context manager:
 
-1. **Local Gateway API** (Recommended): Full feature support
-   - `UNIFI_API_TYPE=local`
-   - `UNIFI_LOCAL_HOST=192.168.2.1`
+```python
+async with UniFiClient(settings) as client:
+    await client.authenticate()
+    response = await client.get("/ea/sites")
+```
 
-2. **Cloud V1 API**: Stable, aggregate statistics only
-   - `UNIFI_API_TYPE=cloud-v1`
+### Models (`src/models/`)
 
-3. **Cloud EA API**: Early Access, aggregate statistics only
-   - `UNIFI_API_TYPE=cloud-ea`
+All Pydantic models use `extra="allow"` for forward API compatibility and `populate_by_name=True`. Many fields use `AliasChoices` to handle Cloud vs. Local API field name differences. Export everything through `src/models/__init__.py`.
 
-### Current Development Focus
+### Tools (`src/tools/`)
 
-**Version 0.2.3** (Current):
+Standard tool function structure:
+1. Validate inputs using helpers from `src/utils/validators.py` (e.g., `validate_site_id`, `validate_mac_address`)
+2. Create client, authenticate, call API
+3. Parse response into Pydantic models
+4. Return `model.model_dump()`
 
-- ✅ P1 API bug fixes (QoS audit_action, Site Manager decorator, Topology warnings, Backup client methods)
-- ✅ P2 RADIUS & Guest Portal — Complete CRUD (get/update for RADIUS accounts and hotspot packages)
+All mutating operations must accept a `confirm: bool = False` parameter and raise `ConfirmationRequiredError` when `confirm=False`. Mutating ops should also call `log_audit()` from `src/utils/audit.py`.
 
-**Version 0.2.2** (Complete ✅):
+### Resources (`src/resources/`)
 
-- ✅ Port Profile & Switch Port Management (8 tools)
-- ✅ Security hardening (dependency updates, PII removal)
-- ✅ API endpoint fixes (RADIUS, firewall, WLAN, network)
-- ✅ Bug fixes (dry_run, list handling, type hints)
+Resource handlers (registered as `sites://`, `site-manager://health`, etc.) are class-based aggregators that batch multiple API calls. They differ from tools in that they're designed for read-only MCP resource URIs, not tool invocations.
 
-**Version 0.2.0** (Complete ✅):
+### Exception Hierarchy (`src/utils/exceptions.py`)
 
-- ✅ Zone-Based Firewall (7 working tools)
-- ✅ Traffic Flow Monitoring (15 tools)
-- ✅ Advanced QoS (11 tools)
-- ✅ Backup & Restore (8 tools)
-- ✅ Multi-Site Aggregation (4 tools)
-- ✅ ACL & Traffic Filtering (7 tools)
-- ✅ Site Management (9 tools)
-- ✅ RADIUS & Guest Portal (10 tools — full CRUD)
-- ✅ Network Topology (5 tools)
+```
+UniFiMCPException
+├── ConfigurationError
+├── AuthenticationError
+├── APIError (has status_code, response_data)
+├── RateLimitError
+├── ResourceNotFoundError
+├── ValidationError
+└── ConfirmationRequiredError
+```
 
-**Total**: 86+ MCP tools, 1,156 tests passing
+### Configuration (`src/config/config.py`)
 
-### Important Constraints
+`Settings` is a Pydantic `BaseSettings` class loaded from `.env` + environment variables. Key vars: `UNIFI_API_TYPE` (local/cloud-v1/cloud-ea), `UNIFI_API_KEY`, `UNIFI_LOCAL_HOST`. See `.env.example` for all options.
 
-1. **UniFi Network 9.0+ Required**: Some features require Network 9.0+
-2. **Local API Recommended**: Cloud APIs have limited functionality
-3. **Endpoint Verification**: Some documented API endpoints may not exist in all versions
-4. **Testing**: Integration tests require real UniFi hardware
+## API Modes
 
-### Getting Help
+| Mode | `UNIFI_API_TYPE` | Scope |
+|------|-----------------|-------|
+| Local Gateway (recommended) | `local` | Full feature set, requires `UNIFI_LOCAL_HOST` |
+| Cloud V1 | `cloud-v1` | Aggregate stats only |
+| Cloud EA | `cloud-ea` | Early Access, aggregate stats only |
 
-- **Issues**: [GitHub Issues](https://github.com/enuno/unifi-mcp-server/issues)
-- **Documentation**: See `API.md` for complete tool reference
-- **Examples**: Check `docs/examples/` for AI assistant prompts
+Integration tests require real UniFi hardware and a configured `.env` file.
 
-## Key Principles
+## Adding a New Tool
 
-1. **Safety First**: Never perform destructive operations without confirmation
-2. **Quality Over Speed**: Maintain high test coverage and code quality
-3. **Clarity**: Write self-documenting code with clear docstrings
-4. **Consistency**: Follow existing patterns and conventions
-5. **Security**: Never commit credentials, validate all inputs
+Use the `unifi-mcp-tool-builder` skill (`/unifi-mcp-tool-builder`) for guided scaffolding. Otherwise:
 
-## Additional Resources
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-- [SECURITY.md](SECURITY.md) - Security policy and best practices
-- [AGENTS.md](AGENTS.md) - Detailed AI agent guidelines
-- [TESTING_PLAN.md](docs/archive/TESTING_PLAN.md) - Testing strategy
-- [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) - Complete roadmap
-
----
-
-**Last Updated**: 2026-02-18
-**Maintained By**: Development Team
+1. Add an `async def your_tool(param: str, settings: Settings) -> dict` to the appropriate module in `src/tools/`
+2. Add the module to `_LOCAL_TOOL_MODULES` (or `_CLOUD_TOOL_MODULES`) in `src/main.py` if it's a new file
+3. Add a Pydantic model in `src/models/` if needed
+4. Write unit tests with mocked `UniFiClient` in `tests/unit/tools/`
+5. Update `API.md` with the new tool's docstring

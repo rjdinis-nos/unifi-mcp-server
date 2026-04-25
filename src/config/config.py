@@ -12,7 +12,8 @@ class APIType(str, Enum):
 
     CLOUD_V1 = "cloud-v1"  # Official stable v1 API
     CLOUD_EA = "cloud-ea"  # Early Access API
-    LOCAL = "local"  # Direct gateway access
+    LOCAL = "local"  # Direct gateway access (UniFi OS gateway proxy)
+    LEGACY = "legacy"  # Classic self-hosted controller (cookie auth, no API key)
 
     # Legacy alias for backward compatibility (defaults to EA)
     CLOUD = "cloud-ea"
@@ -29,15 +30,15 @@ class Settings(BaseSettings):
     )
 
     # API Configuration
-    api_key: str = Field(
-        ...,
-        description="UniFi API key (X-API-Key header)",
+    api_key: str | None = Field(
+        default=None,
+        description="UniFi API key (X-API-Key header) — not required for legacy mode",
         validation_alias="UNIFI_API_KEY",
     )
 
     api_type: APIType = Field(
         default=APIType.CLOUD_EA,
-        description="API connection type: 'cloud-v1' (stable), 'cloud-ea' (early access), or 'local' (gateway)",
+        description="API connection type: 'cloud-v1', 'cloud-ea', 'local', or 'legacy'",
         validation_alias="UNIFI_API_TYPE",
     )
 
@@ -65,6 +66,37 @@ class Settings(BaseSettings):
         default=True,
         description="Verify SSL certificates for local controller",
         validation_alias="UNIFI_LOCAL_VERIFY_SSL",
+    )
+
+    # Legacy API Configuration (classic self-hosted controller, username/password)
+    legacy_host: str | None = Field(
+        default=None,
+        description="Classic self-hosted UniFi controller hostname/IP",
+        validation_alias="UNIFI_LEGACY_HOST",
+    )
+
+    legacy_port: int = Field(
+        default=8443,
+        description="Classic self-hosted controller HTTPS port",
+        validation_alias="UNIFI_LEGACY_PORT",
+    )
+
+    legacy_username: str | None = Field(
+        default=None,
+        description="Username for classic controller login",
+        validation_alias="UNIFI_LEGACY_USERNAME",
+    )
+
+    legacy_password: str | None = Field(
+        default=None,
+        description="Password for classic controller login",
+        validation_alias="UNIFI_LEGACY_PASSWORD",
+    )
+
+    legacy_verify_ssl: bool = Field(
+        default=False,
+        description="Verify SSL certificates for legacy controller",
+        validation_alias="UNIFI_LEGACY_VERIFY_SSL",
     )
 
     # Site Configuration
@@ -182,16 +214,25 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_local_configuration(self) -> "Settings":
-        """Validate that local API has required configuration.
+        """Validate that local/legacy API has required configuration.
 
         Returns:
             Validated settings instance
 
         Raises:
-            ValueError: If local API is selected but host is not provided
+            ValueError: If required configuration is missing for the selected API type
         """
         if self.api_type == APIType.LOCAL and not self.local_host:
-            raise ValueError("local_host is required when api_type is 'local'")
+            raise ValueError("UNIFI_LOCAL_HOST is required when UNIFI_API_TYPE=local")
+        if self.api_type == APIType.LEGACY:
+            if not self.legacy_host:
+                raise ValueError("UNIFI_LEGACY_HOST is required when UNIFI_API_TYPE=legacy")
+            if not self.legacy_username or not self.legacy_password:
+                raise ValueError(
+                    "UNIFI_LEGACY_USERNAME and UNIFI_LEGACY_PASSWORD are required when UNIFI_API_TYPE=legacy"
+                )
+        elif self.api_type != APIType.LEGACY and not self.api_key:
+            raise ValueError("UNIFI_API_KEY is required for cloud and local API types")
         return self
 
     @property
@@ -203,8 +244,10 @@ class Settings(BaseSettings):
         """
         if self.api_type in (APIType.CLOUD_V1, APIType.CLOUD_EA):
             return self.cloud_api_url
+        elif self.api_type == APIType.LEGACY:
+            return f"https://{self.legacy_host}:{self.legacy_port}"
         else:
-            # Always use HTTPS for local gateways (port 443)
+            # LOCAL: Always use HTTPS for local gateways
             # SSL verification is controlled separately via verify_ssl property
             return f"https://{self.local_host}:{self.local_port}"
 
@@ -217,6 +260,8 @@ class Settings(BaseSettings):
         """
         if self.api_type in (APIType.CLOUD_V1, APIType.CLOUD_EA):
             return True
+        if self.api_type == APIType.LEGACY:
+            return self.legacy_verify_ssl
         return self.local_verify_ssl
 
     def get_integration_path(self, endpoint: str) -> str:
@@ -245,6 +290,9 @@ class Settings(BaseSettings):
             return f"/v1/{endpoint}"
         elif self.api_type == APIType.CLOUD_EA:
             return f"/integration/v1/{endpoint}"
+        elif self.api_type == APIType.LEGACY:
+            # Legacy controller has no integration API; fall back to classic /api/
+            return f"/api/{endpoint}"
         else:
             # Local gateways require /proxy/network/ prefix
             return f"/proxy/network/integration/v1/{endpoint}"
@@ -278,6 +326,9 @@ class Settings(BaseSettings):
             return f"/v1/{endpoint}"
         elif self.api_type == APIType.CLOUD_EA:
             return f"/ea/sites/{site_id}/{endpoint}"
+        elif self.api_type == APIType.LEGACY:
+            # Classic controller uses /api/s/{site_name}/{endpoint}
+            return f"/api/s/{site_id}/{endpoint}"
         else:
             # Local gateways use /proxy/network/api/s/ prefix
             return f"/proxy/network/api/s/{site_id}/{endpoint}"
@@ -311,11 +362,16 @@ class Settings(BaseSettings):
     def get_headers(self) -> dict[str, str]:
         """Get HTTP headers for API requests.
 
+        For legacy controllers, no API key header is needed — authentication
+        is handled via session cookies set during login.
+
         Returns:
             Dictionary of HTTP headers
         """
-        return {
-            "X-API-KEY": self.api_key,  # UniFi API expects all caps
+        headers: dict[str, str] = {
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+        if self.api_type != APIType.LEGACY and self.api_key:
+            headers["X-API-KEY"] = self.api_key  # UniFi API expects all caps
+        return headers

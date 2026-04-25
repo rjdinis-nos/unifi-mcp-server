@@ -12,13 +12,20 @@ services:
     tty: false
     environment:
       # UniFi API Configuration
-      UNIFI_API_KEY: ${UNIFI_API_KEY:?UNIFI_API_KEY required}
+      UNIFI_API_KEY: ${UNIFI_API_KEY:-}
       UNIFI_API_TYPE: ${UNIFI_API_TYPE:-cloud}
       UNIFI_HOST: ${UNIFI_HOST:-api.ui.com}
       UNIFI_PORT: ${UNIFI_PORT:-443}
       UNIFI_LOCAL_HOST: ${UNIFI_LOCAL_HOST:-}
       UNIFI_VERIFY_SSL: ${UNIFI_VERIFY_SSL:-true}
       UNIFI_SITE: ${UNIFI_SITE:-default}
+
+      # Legacy (classic self-hosted controller) Configuration
+      UNIFI_LEGACY_HOST: ${UNIFI_LEGACY_HOST:-}
+      UNIFI_LEGACY_PORT: ${UNIFI_LEGACY_PORT:-8443}
+      UNIFI_LEGACY_USERNAME: ${UNIFI_LEGACY_USERNAME:-}
+      UNIFI_LEGACY_PASSWORD: ${UNIFI_LEGACY_PASSWORD:-}
+      UNIFI_LEGACY_VERIFY_SSL: ${UNIFI_LEGACY_VERIFY_SSL:-false}
 
       # MCP Server Configuration
       MCP_SERVER_PORT: ${MCP_SERVER_PORT:-3000}
@@ -68,10 +75,6 @@ services:
     command:
       - "--tools-file"
       - "/app/tools.yaml"
-      - "--telemetry-otlp"
-      - "https://api.agnost.ai/v1/otel/${AGNOST_ORG_ID}"
-      - "--telemetry-service-name"
-      - "${TOOLBOX_SERVICE_NAME:-unifi-mcp-toolbox}"
     volumes:
       - ./tools.yaml:/app/tools.yaml:ro
     networks:

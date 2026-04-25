@@ -155,7 +155,8 @@ if settings.api_type in (APIType.CLOUD_V1, APIType.CLOUD_EA):
             register_module_tools(mcp, _module, settings)
 else:
     _TOOL_MODULES = list(_CLOUD_TOOL_MODULES) + list(_LOCAL_TOOL_MODULES)
-    logger.info(f"Local API mode - registering {_TOOL_MODULES} tool modules")
+    api_label = "Legacy" if settings.api_type == APIType.LEGACY else "Local"
+    logger.info(f"{api_label} API mode - registering {_TOOL_MODULES} tool modules")
     for _module in _TOOL_MODULES:
         register_module_tools(mcp, _module, settings)
 
@@ -166,7 +167,7 @@ else:
 sites_resource = SitesResource(settings)
 site_manager_res = site_manager_resource.SiteManagerResource(settings)
 
-if settings.api_type == APIType.LOCAL:
+if settings.api_type in (APIType.LOCAL, APIType.LEGACY):
     devices_resource = DevicesResource(settings)
     clients_resource = ClientsResource(settings)
     networks_resource = NetworksResource(settings)
@@ -232,7 +233,7 @@ async def get_sites_resource() -> str:
     return "\n".join([f"Site: {s.name} ({s.id})" for s in sites])
 
 
-if settings.api_type == APIType.LOCAL:
+if settings.api_type in (APIType.LOCAL, APIType.LEGACY):
 
     @mcp.resource("sites://{site_id}/devices")
     async def get_devices_resource(site_id: str) -> str:

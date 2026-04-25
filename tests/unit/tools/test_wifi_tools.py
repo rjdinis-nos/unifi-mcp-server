@@ -825,3 +825,154 @@ async def test_get_wlan_statistics_wlan_not_found(mock_settings):
 
     # Should return empty dict when specific WLAN not found
     assert result == {}
+
+
+# =============================================================================
+# update_wlan — new params: bss_transition, band_steering_enabled
+# =============================================================================
+
+
+def _make_update_client(existing_wlan: dict, updated_wlan: dict | None = None):
+    """Build a mock client for update_wlan tests."""
+    mock_client = MagicMock()
+    mock_client.authenticate = AsyncMock()
+    mock_client.get = AsyncMock(return_value={"data": [existing_wlan]})
+    mock_client.put = AsyncMock(return_value={"data": [updated_wlan or existing_wlan]})
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_bss_transition_enabled(mock_settings):
+    """Setting bss_transition=True writes the field to the PUT payload."""
+    existing = {"_id": "wlan1", "name": "Corp", "security": "wpapsk", "enabled": True}
+    mock_client = _make_update_client(existing)
+
+    with patch.object(wifi_module, "UniFiClient", return_value=mock_client):
+        await update_wlan(
+            site_id="default",
+            wlan_id="wlan1",
+            settings=mock_settings,
+            bss_transition=True,
+            confirm=True,
+        )
+
+    json_data = mock_client.put.call_args[1]["json_data"]
+    assert json_data["bss_transition"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_bss_transition_disabled(mock_settings):
+    """Setting bss_transition=False writes False to the PUT payload."""
+    existing = {"_id": "wlan1", "name": "Corp", "security": "wpapsk", "bss_transition": True}
+    mock_client = _make_update_client(existing)
+
+    with patch.object(wifi_module, "UniFiClient", return_value=mock_client):
+        await update_wlan(
+            site_id="default",
+            wlan_id="wlan1",
+            settings=mock_settings,
+            bss_transition=False,
+            confirm=True,
+        )
+
+    json_data = mock_client.put.call_args[1]["json_data"]
+    assert json_data["bss_transition"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_band_steering_enabled(mock_settings):
+    """band_steering_enabled=True maps to no2ghz_oui=True in the PUT payload."""
+    existing = {"_id": "wlan1", "name": "Corp", "security": "wpapsk"}
+    mock_client = _make_update_client(existing)
+
+    with patch.object(wifi_module, "UniFiClient", return_value=mock_client):
+        await update_wlan(
+            site_id="default",
+            wlan_id="wlan1",
+            settings=mock_settings,
+            band_steering_enabled=True,
+            confirm=True,
+        )
+
+    json_data = mock_client.put.call_args[1]["json_data"]
+    assert json_data["no2ghz_oui"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_band_steering_disabled(mock_settings):
+    """band_steering_enabled=False maps to no2ghz_oui=False in the PUT payload."""
+    existing = {"_id": "wlan1", "name": "Corp", "security": "wpapsk", "no2ghz_oui": True}
+    mock_client = _make_update_client(existing)
+
+    with patch.object(wifi_module, "UniFiClient", return_value=mock_client):
+        await update_wlan(
+            site_id="default",
+            wlan_id="wlan1",
+            settings=mock_settings,
+            band_steering_enabled=False,
+            confirm=True,
+        )
+
+    json_data = mock_client.put.call_args[1]["json_data"]
+    assert json_data["no2ghz_oui"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_bss_and_band_steering_together(mock_settings):
+    """Both bss_transition and band_steering_enabled can be set in one call."""
+    existing = {"_id": "wlan1", "name": "Corp", "security": "wpapsk"}
+    mock_client = _make_update_client(existing)
+
+    with patch.object(wifi_module, "UniFiClient", return_value=mock_client):
+        await update_wlan(
+            site_id="default",
+            wlan_id="wlan1",
+            settings=mock_settings,
+            bss_transition=True,
+            band_steering_enabled=True,
+            confirm=True,
+        )
+
+    json_data = mock_client.put.call_args[1]["json_data"]
+    assert json_data["bss_transition"] is True
+    assert json_data["no2ghz_oui"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_bss_transition_none_not_sent(mock_settings):
+    """When bss_transition is None (default), the field is NOT added to the payload."""
+    existing = {"_id": "wlan1", "name": "Corp", "security": "wpapsk"}
+    mock_client = _make_update_client(existing)
+
+    with patch.object(wifi_module, "UniFiClient", return_value=mock_client):
+        await update_wlan(
+            site_id="default",
+            wlan_id="wlan1",
+            settings=mock_settings,
+            name="Corp Updated",
+            confirm=True,
+        )
+
+    json_data = mock_client.put.call_args[1]["json_data"]
+    assert "bss_transition" not in json_data
+    assert "no2ghz_oui" not in json_data
+
+
+@pytest.mark.asyncio
+async def test_update_wlan_bss_transition_dry_run(mock_settings):
+    """bss_transition and band_steering appear in dry-run would_update."""
+    result = await update_wlan(
+        site_id="default",
+        wlan_id="wlan1",
+        settings=mock_settings,
+        bss_transition=True,
+        band_steering_enabled=False,
+        confirm=True,
+        dry_run=True,
+    )
+
+    assert result["dry_run"] is True
+    assert result["would_update"]["bss_transition"] is True
+    assert result["would_update"]["band_steering_enabled"] is False

@@ -263,6 +263,8 @@ async def update_wlan(
     minrate_ng_data_rate_kbps: int | None = None,
     hide_ssid: bool | None = None,
     client_isolation: bool | None = None,
+    bss_transition: bool | None = None,
+    band_steering_enabled: bool | None = None,
     confirm: bool | str = False,
     dry_run: bool | str = False,
 ) -> dict[str, Any]:
@@ -290,6 +292,8 @@ async def update_wlan(
         minrate_ng_data_rate_kbps: Minimum 2.4GHz data rate in kbps (e.g. 6000-12000)
         hide_ssid: Hide/show SSID from broadcast
         client_isolation: Enable/disable client device isolation
+        bss_transition: Enable 802.11v BSS Transition (helps clients roam/load-balance)
+        band_steering_enabled: Enable band steering (prefer 5 GHz for dual-band clients)
         confirm: Confirmation flag (must be True to execute)
         dry_run: If True, validate but don't update the WLAN
 
@@ -356,6 +360,8 @@ async def update_wlan(
         "minrate_ng_data_rate_kbps": minrate_ng_data_rate_kbps,
         "hide_ssid": hide_ssid,
         "client_isolation": client_isolation,
+        "bss_transition": bss_transition,
+        "band_steering_enabled": band_steering_enabled,
         "password": "***MASKED***" if password else None,
     }
 
@@ -433,6 +439,10 @@ async def update_wlan(
                 update_data["hide_ssid"] = hide_ssid
             if client_isolation is not None:
                 update_data["l2_isolation"] = client_isolation
+            if bss_transition is not None:
+                update_data["bss_transition"] = bss_transition
+            if band_steering_enabled is not None:
+                update_data["no2ghz_oui"] = band_steering_enabled
 
             response = await client.put(
                 f"/ea/sites/{site_id}/rest/wlanconf/{wlan_id}", json_data=update_data

@@ -70,11 +70,12 @@ class UniFiClient:
         # Initialize HTTP client
         # Note: We construct full URLs explicitly in _request() to ensure HTTPS is preserved
         # Using base_url can cause protocol downgrade issues with httpx
+        # For legacy mode, follow_redirects=True is safe (cookie jar handles session)
         self.client = httpx.AsyncClient(
             headers=settings.get_headers(),
             timeout=settings.request_timeout,
             verify=settings.verify_ssl,
-            follow_redirects=False,  # Prevent HTTP redirects that might downgrade protocol
+            follow_redirects=settings.api_type == APIType.LEGACY,
         )
 
         # Initialize rate limiter
@@ -85,8 +86,10 @@ class UniFiClient:
 
         self._authenticated = False
         self._site_id_cache: dict[str, str] = {}
-        # Cache for site UUID -> internalReference mapping (needed for local API)
+        # Cache for site UUID -> internalReference mapping (needed for local/legacy API)
         self._site_uuid_to_name: dict[str, str] = {}
+        # CSRF token for legacy controller (extracted from login response cookie)
+        self._csrf_token: str | None = None
 
     async def __aenter__(self) -> "UniFiClient":
         """Async context manager entry."""
@@ -132,6 +135,9 @@ class UniFiClient:
         if self.settings.api_type in (APIType.CLOUD_V1, APIType.CLOUD_EA):
             # Cloud APIs - no translation needed
             return endpoint
+
+        if self.settings.api_type == APIType.LEGACY:
+            return self._translate_endpoint_legacy(endpoint)
 
         # Local API - translate cloud format to local format
         import re
@@ -192,13 +198,82 @@ class UniFiClient:
         self.logger.warning(f"Endpoint does not match known patterns: {endpoint}")
         return endpoint
 
+    def _translate_endpoint_legacy(self, endpoint: str) -> str:
+        """Translate cloud API endpoint paths to classic self-hosted controller paths.
+
+        Classic controller uses /api/self/sites for the site list and
+        /api/s/{site_name}/{resource} for per-site resources.
+
+        Args:
+            endpoint: Cloud-style endpoint (e.g., /ea/sites/{id}/devices)
+
+        Returns:
+            Translated classic controller endpoint
+        """
+        import re
+
+        # Already a legacy path — return as-is
+        if endpoint.startswith("/api/"):
+            return endpoint
+
+        # Site list
+        if endpoint == "/ea/sites":
+            return "/api/self/sites"
+
+        # Pattern: /ea/sites/{site_id}/{rest_of_path}
+        match = re.match(r"^/ea/sites/([^/]+)/(.+)$", endpoint)
+        if match:
+            site_id, cloud_path = match.groups()
+            site_name = self._site_uuid_to_name.get(site_id, site_id)
+            if site_id != site_name:
+                self.logger.debug(f"Translated site ID (legacy): {site_id} -> {site_name}")
+
+            path_mapping = {
+                "devices": "stat/device",
+                "sta": "stat/sta",
+                "rest/networkconf": "rest/networkconf",
+                "firewall/groups": "rest/firewallgroup",
+                "firewall/rules": "rest/firewallrule",
+                "wlan": "rest/wlanconf",
+                "portforward": "rest/portforward",
+                "radiusprofile": "rest/radiusprofile",
+                "user-groups": "rest/usergroup",
+                "dpi": "stat/dpi",
+                "health": "stat/health",
+                "sysinfo": "stat/sysinfo",
+            }
+
+            local_path = path_mapping.get(cloud_path, cloud_path)
+            if cloud_path != local_path:
+                self.logger.debug(f"Translated path (legacy): {cloud_path} -> {local_path}")
+
+            return f"/api/s/{site_name}/{local_path}"
+
+        # Pattern: /ea/sites/{site_id}  (no trailing path)
+        match = re.match(r"^/ea/sites/([^/]+)$", endpoint)
+        if match:
+            site_id = match.group(1)
+            site_name = self._site_uuid_to_name.get(site_id, site_id)
+            return f"/api/s/{site_name}/self"
+
+        self.logger.warning(f"Legacy endpoint does not match known patterns: {endpoint}")
+        return endpoint
+
     async def authenticate(self) -> None:
         """Authenticate with the UniFi API.
+
+        For legacy (classic self-hosted) controllers, this performs a POST login
+        using username/password and stores the resulting session cookie.  All
+        other API types test authentication with a lightweight GET request.
 
         Raises:
             AuthenticationError: If authentication fails
         """
         try:
+            if self.settings.api_type == APIType.LEGACY:
+                await self._authenticate_legacy()
+                return
+
             # Test authentication with a simple API call
             # Use appropriate endpoint based on API type
             if self.settings.api_type == APIType.CLOUD_V1:
@@ -234,24 +309,83 @@ class UniFiClient:
             self.logger.error(f"Authentication failed: {e}")
             raise AuthenticationError(f"Failed to authenticate with UniFi API: {e}") from e
 
-    def _build_site_uuid_map(self, sites: list[dict[str, Any]]) -> None:
-        """Build a mapping of site UUIDs to internal reference names.
+    async def _authenticate_legacy(self) -> None:
+        """Authenticate against a classic self-hosted UniFi Network Controller.
 
-        This is required for local API, which uses site names (e.g., 'default')
-        instead of UUIDs in endpoint paths.
+        Performs a POST /api/login with username + password, stores the session
+        cookie automatically via httpx, and extracts the CSRF token for mutating
+        requests.  Then fetches the site list to build the UUID-to-name mapping.
+
+        Raises:
+            AuthenticationError: If login fails or credentials are rejected
+        """
+        login_url = f"{self.settings.base_url}/api/login"
+        payload = {
+            "username": self.settings.legacy_username,
+            "password": self.settings.legacy_password,
+        }
+        try:
+            response = await self.client.post(login_url, json=payload)
+        except Exception as e:
+            raise AuthenticationError(f"Legacy login request failed: {e}") from e
+
+        if response.status_code not in (200, 201):
+            raise AuthenticationError(
+                f"Legacy controller rejected login (HTTP {response.status_code}). "
+                "Check UNIFI_LEGACY_USERNAME and UNIFI_LEGACY_PASSWORD."
+            )
+
+        try:
+            body = response.json()
+        except Exception:
+            body = {}
+
+        rc = body.get("meta", {}).get("rc", "")
+        if rc != "ok":
+            msg = body.get("meta", {}).get("msg", "unknown error")
+            raise AuthenticationError(f"Legacy controller login failed: {msg}")
+
+        # Extract CSRF token from response cookies (available in newer controller versions)
+        self._csrf_token = response.cookies.get("csrf_token")
+
+        self._authenticated = True
+        self.logger.info("Successfully authenticated with legacy UniFi controller")
+
+        # Build site name mapping so resolve_site_id() works for legacy
+        sites_response = await self._request("GET", "/api/self/sites")
+        if isinstance(sites_response, list):
+            self._build_site_uuid_map(sites_response)
+        elif isinstance(sites_response, dict):
+            sites = sites_response.get("data", [])
+            self._build_site_uuid_map(sites)
+
+    def _build_site_uuid_map(self, sites: list[dict[str, Any]]) -> None:
+        """Build a mapping of site identifiers to short names used in API paths.
+
+        For local API:  site["id"]  ->  site["internalReference"]
+        For legacy API: site["_id"] ->  site["name"]  (short name, e.g. 'default')
 
         Args:
-            sites: List of site objects from /ea/sites endpoint
+            sites: List of site objects from /ea/sites (local) or /api/self/sites (legacy)
         """
         self._site_uuid_to_name.clear()
         for site in sites:
             if not isinstance(site, dict):
                 self.logger.warning(f"Skipping non-dict site entry: {type(site).__name__}")
                 continue
-            site_id = site.get("id")
-            internal_ref = site.get("internalReference")
-            if site_id and internal_ref:
-                self._site_uuid_to_name[site_id] = internal_ref
+            if self.settings.api_type == APIType.LEGACY:
+                # Classic controller: _id is MongoDB ObjectID, name is the short path name
+                site_id = site.get("_id")
+                short_name = site.get("name")
+                if site_id and short_name:
+                    self._site_uuid_to_name[site_id] = short_name
+                    # Also map the short name to itself so direct lookups work
+                    self._site_uuid_to_name[short_name] = short_name
+            else:
+                site_id = site.get("id")
+                internal_ref = site.get("internalReference")
+                if site_id and internal_ref:
+                    self._site_uuid_to_name[site_id] = internal_ref
 
         self.logger.info(f"Built site UUID mapping: {len(self._site_uuid_to_name)} sites")
 
@@ -309,11 +443,21 @@ class UniFiClient:
             # ENHANCED LOGGING - Show actual URL being requested
             self.logger.info(f"Making {method} request to: {full_url}")
 
+            # For legacy controller, inject CSRF token on mutating requests
+            extra_headers: dict[str, str] = {}
+            if (
+                self.settings.api_type == APIType.LEGACY
+                and method.upper() in ("POST", "PUT", "DELETE", "PATCH")
+                and self._csrf_token
+            ):
+                extra_headers["X-CSRF-Token"] = self._csrf_token
+
             response = await self.client.request(
                 method=method,
                 url=full_url,
                 params=params,
                 json=json_data,
+                headers=extra_headers if extra_headers else None,
             )
 
             duration_ms = (time.time() - start_time) * 1000
@@ -511,6 +655,12 @@ class UniFiClient:
             site_identifier = self.settings.default_site
 
         if self.settings.api_type == APIType.CLOUD or self._looks_like_uuid(site_identifier):
+            return site_identifier
+
+        # For legacy API, the site identifier IS the short name used in paths.
+        if self.settings.api_type == APIType.LEGACY:
+            if site_identifier in self._site_uuid_to_name:
+                return self._site_uuid_to_name[site_identifier]
             return site_identifier
 
         cached = self._site_id_cache.get(site_identifier)
