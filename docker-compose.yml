@@ -1,6 +1,6 @@
 services:
   unifi-mcp:
-    image: ghcr.io/rjdinis-nos/unifi-mcp-server:0.2.7
+    image: ghcr.io/rjdinis-nos/unifi-mcp-server:latest
     networks:
       - hostnet
     environment:
