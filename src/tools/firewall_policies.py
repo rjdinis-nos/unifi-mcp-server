@@ -4,11 +4,7 @@ from typing import Any
 
 from ..api.client import UniFiClient
 from ..config import APIType, Settings
-from ..models.firewall_policy import (
-    FirewallPolicy,
-    FirewallPolicyCreate,
-    FirewallZoneV2Mapping,
-)
+from ..models.firewall_policy import FirewallPolicy, FirewallPolicyCreate, FirewallZoneV2Mapping
 from ..utils import APIError, ResourceNotFoundError, get_logger, log_audit, sanitize_log_message
 from ..utils.validators import coerce_bool
 
