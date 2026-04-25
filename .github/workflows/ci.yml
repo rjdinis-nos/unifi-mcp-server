@@ -25,35 +25,24 @@ jobs:
           python-version: '3.10'
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          uv venv
-          source .venv/bin/activate
-          uv pip install -e ".[dev]"
+        run: uv sync --all-extras --all-groups
 
       - name: Check code formatting with Black
-        run: |
-          source .venv/bin/activate
-          black --check src/ tests/
+        run: uv run black --check src/ tests/
 
       - name: Check import sorting with isort
-        run: |
-          source .venv/bin/activate
-          isort --check-only src/ tests/
+        run: uv run isort --check-only src/ tests/
 
       - name: Lint with Ruff
-        run: |
-          source .venv/bin/activate
-          ruff check src/ tests/
+        run: uv run ruff check src/ tests/
 
       - name: Type check with MyPy
-        run: |
-          source .venv/bin/activate
-          mypy src/
+        run: uv run mypy src/
         continue-on-error: true  # Don't fail build on type errors initially
 
   test:
@@ -74,20 +63,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          uv venv
-          source .venv/bin/activate
-          uv pip install -e ".[dev]"
+        run: uv sync --all-extras --all-groups
 
       - name: Run unit tests
-        run: |
-          source .venv/bin/activate
-          pytest tests/ -m "not integration" --cov=src --cov-report=xml --cov-report=term-missing
+        run: uv run pytest tests/ -m "not integration" --cov=src --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -111,26 +95,19 @@ jobs:
           python-version: '3.10'
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          uv venv
-          source .venv/bin/activate
-          uv pip install -e ".[dev]"
+        run: uv sync --all-extras --all-groups
 
       - name: Run Bandit security linter
-        run: |
-          source .venv/bin/activate
-          bandit -r src/ -f json -o bandit-report.json
+        run: uv run bandit -r src/ -f json -o bandit-report.json
         continue-on-error: true
 
       - name: Check for known vulnerabilities with Safety
-        run: |
-          source .venv/bin/activate
-          safety check --json
+        run: uv run safety check --json
         continue-on-error: true
 
       - name: Upload Bandit report
