@@ -1,15 +1,44 @@
 services:
   unifi-mcp:
-    image: ghcr.io/rjdinis-nos/unifi-mcp-server:latest
-    container_name: unifi-mcp-server
-    restart: unless-stopped
-    network_mode: host
-    env_file:
-      - .env
+    image: ghcr.io/rjdinis-nos/unifi-mcp-server:0.2.7
+    networks:
+      - hostnet
     environment:
+      # FastMCP transport
       FASTMCP_TRANSPORT: streamable-http
       FASTMCP_HOST: 0.0.0.0
-      FASTMCP_PORT: 3000
+      FASTMCP_PORT: "3000"
+      # UniFi API
+      UNIFI_API_TYPE: ${UNIFI_API_TYPE}
+      UNIFI_API_KEY: ${UNIFI_API_KEY}
+      UNIFI_CLOUD_API_URL: ${UNIFI_CLOUD_API_URL:-https://api.ui.com}
+      # Local API
+      UNIFI_LOCAL_HOST: ${UNIFI_LOCAL_HOST:-}
+      UNIFI_LOCAL_PORT: ${UNIFI_LOCAL_PORT:-443}
+      UNIFI_LOCAL_VERIFY_SSL: ${UNIFI_LOCAL_VERIFY_SSL:-false}
+      # Legacy API
+      UNIFI_LEGACY_HOST: ${UNIFI_LEGACY_HOST:-}
+      UNIFI_LEGACY_PORT: ${UNIFI_LEGACY_PORT:-8443}
+      UNIFI_LEGACY_USERNAME: ${UNIFI_LEGACY_USERNAME:-}
+      UNIFI_LEGACY_PASSWORD: ${UNIFI_LEGACY_PASSWORD:-}
+      UNIFI_LEGACY_VERIFY_SSL: ${UNIFI_LEGACY_VERIFY_SSL:-false}
+      # MCP server
+      MCP_SERVER_PORT: ${MCP_SERVER_PORT:-3000}
+      MCP_LOG_LEVEL: ${MCP_LOG_LEVEL:-INFO}
+      # Agnost
+      AGNOST_ENABLED: ${AGNOST_ENABLED:-false}
+      AGNOST_ORG_ID: ${AGNOST_ORG_ID:-}
+      AGNOST_ENDPOINT: ${AGNOST_ENDPOINT:-https://api.agnost.ai}
+      AGNOST_DISABLE_INPUT: ${AGNOST_DISABLE_INPUT:-false}
+      AGNOST_DISABLE_OUTPUT: ${AGNOST_DISABLE_OUTPUT:-false}
     volumes:
       - ./logs:/app/logs
       - ./audit.log:/app/audit.log
+    deploy:
+      restart_policy:
+        condition: any
+
+networks:
+  hostnet:
+    external: true
+    name: host
