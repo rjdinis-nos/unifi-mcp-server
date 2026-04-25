@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import ssl
 import time
 from typing import Any
 from uuid import UUID
@@ -55,6 +56,24 @@ class RateLimiter:
                 self.tokens -= 1
 
 
+def _legacy_ssl_context() -> ssl.SSLContext:
+    """Create a permissive SSL context for older UniFi controllers.
+
+    Older controllers use TLS 1.0/1.1 and weak cipher suites rejected by
+    modern OpenSSL at SECLEVEL>=2. We lower the security level and allow
+    the full cipher list so the handshake can succeed.
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.set_ciphers("ALL:@SECLEVEL=0")
+    try:
+        ctx.minimum_version = ssl.TLSVersion.TLSv1
+    except AttributeError:
+        pass
+    return ctx
+
+
 class UniFiClient:
     """Async HTTP client for UniFi API with authentication and rate limiting."""
 
@@ -67,6 +86,13 @@ class UniFiClient:
         self.settings = settings
         self.logger = get_logger(__name__, settings.log_level)
 
+        # For legacy controllers: use a permissive SSL context to handle old
+        # TLS versions and cipher suites that modern OpenSSL rejects by default.
+        if settings.api_type == APIType.LEGACY and not settings.verify_ssl:
+            ssl_verify: bool | ssl.SSLContext = _legacy_ssl_context()
+        else:
+            ssl_verify = settings.verify_ssl
+
         # Initialize HTTP client
         # Note: We construct full URLs explicitly in _request() to ensure HTTPS is preserved
         # Using base_url can cause protocol downgrade issues with httpx
@@ -74,7 +100,7 @@ class UniFiClient:
         self.client = httpx.AsyncClient(
             headers=settings.get_headers(),
             timeout=settings.request_timeout,
-            verify=settings.verify_ssl,
+            verify=ssl_verify,
             follow_redirects=settings.api_type == APIType.LEGACY,
         )
 

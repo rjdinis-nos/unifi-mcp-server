@@ -213,3 +213,4 @@ MagicMock/
 .mcpregistry_github_token
 .mcpregistry_registry_token
 bandit-report.json
+.mcp.json

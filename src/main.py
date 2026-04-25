@@ -327,13 +327,16 @@ async def get_site_manager_internet_health_resource() -> str:
 
 def main() -> None:
     """Main entry point for the MCP server."""
+    import os
+
+    transport = os.getenv("FASTMCP_TRANSPORT", "stdio")
     logger.info("Starting UniFi MCP Server...")
     logger.info(f"API Type: {settings.api_type.value}")
     logger.info(f"Base URL: {settings.base_url}")
+    logger.info(f"Transport: {transport}")
     logger.info("Server ready to handle requests")
 
-    # Start the FastMCP server
-    mcp.run()
+    mcp.run(transport=transport)
 
 
 if __name__ == "__main__":
