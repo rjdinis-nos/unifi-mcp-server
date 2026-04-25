@@ -346,17 +346,7 @@ jobs:
             /repos/${{ github.repository }}/discussions \
             -f title="Release ${{ steps.version.outputs.version }}" \
             -f body="$(cat announcement.md)" \
-            -f category_id="$(gh api graphql -f query='
-              query($owner: String!, $repo: String!) {
-                repository(owner: $owner, name: $repo) {
-                  discussionCategories(first: 10) {
-                    nodes {
-                      id
-                      name
-                    }
-                  }
-                }
-              }' -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} --jq '.data.repository.discussionCategories.nodes[] | select(.name=="Announcements") | .id')"
+            -f category_id="DIC_kwDOSMU8tc4C7rc5"
 
   notify:
     name: Notification
