@@ -231,7 +231,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "UNIFI_LEGACY_USERNAME and UNIFI_LEGACY_PASSWORD are required when UNIFI_API_TYPE=legacy"
                 )
-        elif self.api_type != APIType.LEGACY and not self.api_key:
+        elif not self.api_key:
             raise ValueError("UNIFI_API_KEY is required for cloud and local API types")
         return self
 

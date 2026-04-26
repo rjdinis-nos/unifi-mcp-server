@@ -4,7 +4,7 @@ import asyncio
 import json
 import ssl
 import time
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
@@ -554,7 +554,9 @@ class UniFiClient:
                         )
                         # Return the data directly for consistency across all APIs
                         # If data is a list, return it; if single object, return as-is
-                        return data if isinstance(data, list) else {"data": data}
+                        return (
+                            cast(dict[str, Any], data) if isinstance(data, list) else {"data": data}
+                        )
                 else:
                     # Empty response body - treat as success with empty data
                     self.logger.debug(f"Empty response body for {endpoint}, returning empty dict")
@@ -720,7 +722,7 @@ class UniFiClient:
 
             if site_identifier in {value for value in identifiers if value}:
                 self._site_id_cache[site_identifier] = site_id
-                return site_id
+                return str(site_id)
 
         raise ResourceNotFoundError("site", site_identifier)
 
@@ -791,8 +793,8 @@ class UniFiClient:
 
         # Handle different response formats
         if isinstance(response, list):
-            return response
-        return response.get("data", response.get("backups", []))
+            return cast(list[dict[str, Any]], response)
+        return cast(list[dict[str, Any]], response.get("data", response.get("backups", [])))
 
     async def download_backup(
         self,
@@ -827,7 +829,7 @@ class UniFiClient:
         response = await self.client.get(full_url)
         response.raise_for_status()
 
-        return response.content
+        return bytes(response.content)
 
     async def delete_backup(
         self,
@@ -948,7 +950,7 @@ class UniFiClient:
         enabled: bool = True,
         retention_days: int = 30,
         max_backups: int = 10,
-        day_of_week: str | None = None,
+        day_of_week: int | str | None = None,
         day_of_month: int | None = None,
         cloud_backup_enabled: bool = False,
     ) -> dict[str, Any]:

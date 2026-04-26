@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal, cast
 
 from src.api.client import UniFiClient
 from src.config import Settings
@@ -74,7 +74,7 @@ async def get_network_topology(
         # Convert devices to topology nodes
         nodes = []
         connections = []
-        depth_map = {}  # Track network depth for each device
+        depth_map: dict[str, int] = {}  # Track network depth for each device
 
         # First pass: Create all device nodes and calculate depth
         for device in device_nodes:
@@ -206,7 +206,7 @@ async def get_device_connections(
             if conn.get("source_node_id") == device_id or conn.get("target_node_id") == device_id
         ]
 
-    return connections
+    return cast(list[dict[Any, Any]], connections)
 
 
 async def get_port_mappings(

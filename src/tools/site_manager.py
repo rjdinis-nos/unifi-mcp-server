@@ -25,7 +25,7 @@ from ..utils.exceptions import ResourceNotFoundError
 logger = get_logger(__name__)
 
 
-def require_site_manager(func):
+def require_site_manager(func: Any) -> Any:
     """Decorator to ensure Site Manager API is enabled before calling function.
 
     Args:
@@ -39,7 +39,7 @@ def require_site_manager(func):
     """
 
     @wraps(func)
-    async def wrapper(settings: Settings, *args, **kwargs):
+    async def wrapper(settings: Settings, *args: Any, **kwargs: Any) -> Any:
         if not settings.site_manager_enabled:
             raise ValueError("Site Manager API is not enabled. Set UNIFI_SITE_MANAGER_ENABLED=true")
         return await func(settings, *args, **kwargs)
@@ -99,7 +99,7 @@ async def get_internet_health(settings: Settings, site_id: str | None = None) ->
                 _raw = response.get("data", response)
                 data = _raw[0] if isinstance(_raw, list) else _raw
 
-            return InternetHealthMetrics(**data).model_dump()  # type: ignore[no-any-return]
+            return InternetHealthMetrics(**data).model_dump()
         except ResourceNotFoundError:
             logger.warning("internet/health endpoint not available on this Site Manager API")
             return {
@@ -132,7 +132,7 @@ async def get_site_health_summary(
             data = response
 
             if site_id:
-                return SiteHealthSummary(**data).model_dump()  # type: ignore[no-any-return]
+                return SiteHealthSummary(**data).model_dump()
             else:
                 # Multiple sites - response is already a list or dict with sites
                 summaries = data.get("sites", []) if isinstance(data, dict) else data
@@ -209,7 +209,7 @@ async def get_cross_site_statistics(settings: Settings) -> dict[str, Any]:
                 devices_online += health.get("devices_online", 0)
                 total_clients += health.get("clients_active", 0)
 
-        return CrossSiteStatistics(  # type: ignore[no-any-return]
+        return CrossSiteStatistics(
             total_sites=total_sites,
             sites_healthy=sites_healthy,
             sites_degraded=sites_degraded,
@@ -270,6 +270,7 @@ async def get_site_inventory(
 
         if site_id:
             # Get inventory for specific site
+            site_response: dict[str, Any] | list[Any]
             try:
                 site_response = await client.get(f"sites/{site_id}")
             except ResourceNotFoundError:
@@ -301,7 +302,7 @@ async def get_site_inventory(
                 firewall_rule_count=site_data.get("firewall_rule_count", 0),
                 last_updated=site_data.get("last_updated", ""),
             )
-            return inventory.model_dump()  # type: ignore[no-any-return]
+            return inventory.model_dump()
         else:
             # Get inventory for all sites
             sites_response = await client.list_sites()
@@ -447,7 +448,7 @@ async def compare_site_performance(settings: Settings) -> dict[str, Any]:
             site_metrics=site_metrics,
         )
 
-        return comparison.model_dump()  # type: ignore[no-any-return]
+        return comparison.model_dump()
 
 
 @require_site_manager
@@ -567,11 +568,11 @@ async def search_across_sites(
         search_result = CrossSiteSearchResult(
             total_results=len(results),
             search_query=query,
-            result_type=search_type,  # type: ignore[arg-type]
+            result_type=search_type,
             results=results,
         )
 
-        return search_result.model_dump()  # type: ignore[no-any-return]
+        return search_result.model_dump()
 
 
 # ISP Metrics Tools (added 2026-02-16)
@@ -597,7 +598,7 @@ async def get_isp_metrics(settings: Settings, site_id: str) -> dict[str, Any]:
                 _raw = response.get("data", response)
                 data = _raw[0] if isinstance(_raw, list) else _raw
 
-            return ISPMetrics(**data).model_dump()  # type: ignore[no-any-return]
+            return ISPMetrics(**data).model_dump()
         except ResourceNotFoundError:
             logger.warning("isp/metrics endpoint not available on this Site Manager API")
             return {"error": "isp/metrics endpoint not available", "site_id": site_id}
@@ -694,7 +695,7 @@ async def get_sdwan_config(settings: Settings, config_id: str) -> dict[str, Any]
             _raw = response.get("data", response)
             data = _raw[0] if isinstance(_raw, list) else _raw
 
-        return SDWANConfig(**data).model_dump()  # type: ignore[no-any-return]
+        return SDWANConfig(**data).model_dump()
 
 
 @require_site_manager
@@ -719,7 +720,7 @@ async def get_sdwan_config_status(settings: Settings, config_id: str) -> dict[st
             _raw = response.get("data", response)
             data = _raw[0] if isinstance(_raw, list) else _raw
 
-        return SDWANConfigStatus(**data).model_dump()  # type: ignore[no-any-return]
+        return SDWANConfigStatus(**data).model_dump()
 
 
 # Host Management Tools (added 2026-02-16)
@@ -749,7 +750,7 @@ async def list_hosts(
         )
 
         if isinstance(data, list):
-            return data  # type: ignore[no-any-return]
+            return data
         else:
             return []
 
@@ -776,7 +777,7 @@ async def get_host(settings: Settings, host_id: str) -> dict[str, Any]:
             _raw = response.get("data", response)
             data = _raw[0] if isinstance(_raw, list) else _raw
 
-        return data  # type: ignore[no-any-return]
+        return dict(data)
 
 
 # Version Control Tool (added 2026-02-16)
@@ -802,7 +803,7 @@ async def get_version_control(settings: Settings) -> dict[str, Any]:
                 _raw = response.get("data", response)
                 data = _raw[0] if isinstance(_raw, list) else _raw
 
-            return VersionControl(**data).model_dump()  # type: ignore[no-any-return]
+            return VersionControl(**data).model_dump()
         except ResourceNotFoundError:
             logger.warning("version endpoint not available on this Site Manager API")
             return {"error": "version endpoint not available"}

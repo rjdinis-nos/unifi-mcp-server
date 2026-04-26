@@ -3,7 +3,7 @@
 import importlib.metadata
 import json
 import os
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastmcp import FastMCP
 
@@ -65,8 +65,8 @@ if os.getenv("AGNOST_ENABLED", "false").lower() in ("true", "1", "yes"):
     agnost_org_id = os.getenv("AGNOST_ORG_ID")
     if agnost_org_id:
         try:
-            from agnost import config as agnost_config  # type: ignore[import-untyped]
-            from agnost import track  # type: ignore[import-untyped]
+            from agnost import config as agnost_config
+            from agnost import track
 
             disable_input = os.getenv("AGNOST_DISABLE_INPUT", "false").lower() in (
                 "true",
@@ -344,7 +344,8 @@ def main() -> None:
     logger.info("Server ready to handle requests")
 
     if transport in ("streamable-http", "http", "sse"):
-        starlette_app = mcp.http_app(transport=transport)
+        http_transport = cast(Literal["http", "streamable-http", "sse"], transport)
+        starlette_app = mcp.http_app(transport=http_transport)
         cors_app = CORSMiddleware(
             app=starlette_app,
             allow_origins=["*"],
@@ -353,7 +354,8 @@ def main() -> None:
         )
         uvicorn.run(cors_app, host=host, port=port, lifespan="on")
     else:
-        mcp.run(transport=transport)
+        run_transport = cast(Literal["stdio", "http", "sse", "streamable-http"], transport)
+        mcp.run(transport=run_transport)
 
 
 if __name__ == "__main__":
