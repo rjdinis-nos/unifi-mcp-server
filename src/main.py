@@ -3,7 +3,7 @@
 import importlib.metadata
 import json
 import os
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastmcp import FastMCP
 
@@ -65,8 +65,8 @@ if os.getenv("AGNOST_ENABLED", "false").lower() in ("true", "1", "yes"):
     agnost_org_id = os.getenv("AGNOST_ORG_ID")
     if agnost_org_id:
         try:
-            from agnost import config as agnost_config  # type: ignore[import-untyped]
-            from agnost import track  # type: ignore[import-untyped]
+            from agnost import config as agnost_config
+            from agnost import track
 
             disable_input = os.getenv("AGNOST_DISABLE_INPUT", "false").lower() in (
                 "true",
@@ -330,14 +330,32 @@ def main() -> None:
     """Main entry point for the MCP server."""
     import os
 
+    import uvicorn
+    from starlette.middleware.cors import CORSMiddleware
+
     transport = os.getenv("FASTMCP_TRANSPORT", "stdio")
+    host = os.getenv("FASTMCP_HOST", "0.0.0.0")
+    port = int(os.getenv("FASTMCP_PORT", "3000"))
+
     logger.info("Starting UniFi MCP Server...")
     logger.info(f"API Type: {settings.api_type.value}")
     logger.info(f"Base URL: {settings.base_url}")
     logger.info(f"Transport: {transport}")
     logger.info("Server ready to handle requests")
 
-    mcp.run(transport=transport)
+    if transport in ("streamable-http", "http", "sse"):
+        http_transport = cast(Literal["http", "streamable-http", "sse"], transport)
+        starlette_app = mcp.http_app(transport=http_transport)
+        cors_app = CORSMiddleware(
+            app=starlette_app,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        uvicorn.run(cors_app, host=host, port=port, lifespan="on")
+    else:
+        run_transport = cast(Literal["stdio", "http", "sse", "streamable-http"], transport)
+        mcp.run(transport=run_transport)
 
 
 if __name__ == "__main__":

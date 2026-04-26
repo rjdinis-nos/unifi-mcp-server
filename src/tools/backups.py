@@ -770,7 +770,9 @@ async def get_backup_status(
             # Note: UniFi API may not have a dedicated status endpoint
             # In practice, backups complete synchronously in trigger_backup
             # This implementation provides a consistent interface
-            status_data = await client.get_backup_status(operation_id=operation_id)
+            status_data = await client.get_backup_status(
+                site_id="default", operation_id=operation_id
+            )
 
             result = {
                 "operation_id": operation_id,
