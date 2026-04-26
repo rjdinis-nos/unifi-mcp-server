@@ -330,14 +330,30 @@ def main() -> None:
     """Main entry point for the MCP server."""
     import os
 
+    import uvicorn
+    from starlette.middleware.cors import CORSMiddleware
+
     transport = os.getenv("FASTMCP_TRANSPORT", "stdio")
+    host = os.getenv("FASTMCP_HOST", "0.0.0.0")
+    port = int(os.getenv("FASTMCP_PORT", "3000"))
+
     logger.info("Starting UniFi MCP Server...")
     logger.info(f"API Type: {settings.api_type.value}")
     logger.info(f"Base URL: {settings.base_url}")
     logger.info(f"Transport: {transport}")
     logger.info("Server ready to handle requests")
 
-    mcp.run(transport=transport)
+    if transport in ("streamable-http", "http", "sse"):
+        starlette_app = mcp.http_app(transport=transport)
+        cors_app = CORSMiddleware(
+            app=starlette_app,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        uvicorn.run(cors_app, host=host, port=port, lifespan="on")
+    else:
+        mcp.run(transport=transport)
 
 
 if __name__ == "__main__":
